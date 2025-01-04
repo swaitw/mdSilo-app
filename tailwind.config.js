@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const defaultTheme = require('tailwindcss/defaultTheme');
 const colors = require('tailwindcss/colors');
 const { gray } = require('tailwindcss/colors');
 
@@ -7,6 +6,10 @@ module.exports = {
   mode: 'jit',
   content: ['./src/**/*.{html,js,ts,jsx,tsx}', './public/**/*.{html,js,ts,jsx,tsx}'],
   darkMode: 'class',
+  plugins: [
+    require('@tailwindcss/typography'), 
+    require('@tailwindcss/forms'),
+  ],
   theme: {
     container: {
       center: true,
@@ -19,9 +22,6 @@ module.exports = {
       },
     },
     extend: {
-      fontFamily: {
-        display: ['Inter', ...defaultTheme.fontFamily.sans],
-      },
       spacing: {
         0.25: '0.0625rem',
         128: '32rem',
@@ -108,10 +108,4 @@ module.exports = {
       },
     },
   },
-  // variants: {
-  //   backgroundColor: ['responsive', 'hover', 'focus', 'active'],
-  //   display: ['responsive', 'group-hover'],
-  //   extend: {},
-  // },
-  plugins: [require('@tailwindcss/typography'), require('@tailwindcss/forms')],
 };

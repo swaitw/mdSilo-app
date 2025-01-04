@@ -8,7 +8,7 @@ import { loadDir } from 'file/open';
 const DEBOUNCE_MS = 1000;
 
 export type BacklinkMatch = {
-  text: string;
+  text: string; // matched text
   from: number;
   to: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,7 +88,7 @@ const computeLinkedMatches = (content: string, noteTitle: string) => {
         if ((mark.type === "link" || mark.type === 'wikilink') && mark.attrs) {
           const href = mark.attrs.href;
           if (href && !isUrl(href)) {
-            const title = href.replaceAll('_', ' ');
+            const title = decodeURI(href);
             if (noteTitle === title) {
               out.push({ text: node.text, from: node.from, to: node.to, context })
             }

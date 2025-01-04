@@ -1,32 +1,35 @@
+use crate::paths::{PathBufExt, PathExt};
+use crate::storage::do_log;
+use crate::tree::node::from_node;
+use crate::tree::Tree;
+use chrono::offset::Local;
+use chrono::DateTime;
+use notify::{
+  event::{EventKind, ModifyKind, RenameMode},
+  Config, Event as RawEvent, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::time::SystemTime;
-extern crate notify;
-extern crate open;
-extern crate trash;
-use crate::paths::{PathBufExt, PathExt};
-use notify::{
-  event::{EventKind, ModifyKind, RenameMode},
-  RecommendedWatcher, Event as RawEvent, RecursiveMode, Watcher, Config
-};
+use tauri::{api, AppHandle, Manager};
+
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 
-
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct SimpleFileMeta {
-  file_path: String,
-  file_name: String,
-  // file_type: fs::FileType,
-  created: SystemTime,
-  last_modified: SystemTime, // locale
-  last_accessed: SystemTime,
-  size: u64,
-  readonly: bool,
-  is_dir: bool,
-  is_file: bool,
-  is_hidden: bool,
+  pub file_path: String,
+  pub file_name: String,
+  // pub file_type: fs::FileType,
+  pub created: SystemTime,
+  pub last_modified: SystemTime, // locale
+  pub last_accessed: SystemTime,
+  pub size: u64,
+  pub readonly: bool,
+  pub is_dir: bool,
+  pub is_file: bool,
+  pub is_hidden: bool,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -45,7 +48,7 @@ pub struct FileMetaData {
   pub is_hidden: bool,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Default)]
 pub struct FolderData {
   pub number_of_files: u16,
   pub files: Vec<FileMetaData>,
@@ -65,7 +68,7 @@ pub fn check_hidden(file_path: &str) -> bool {
   let attributes = if let Ok(attr) = fs::metadata(file_path) {
     attr.file_attributes()
   } else {
-    2 
+    2
   };
   // FILE_ATTRIBUTE_HIDDEN 2 (0x2)
   (attributes & 0x2) > 0
@@ -78,6 +81,20 @@ pub fn check_hidden(file_path: &str) -> bool {
   basename.starts_with(".")
 }
 
+#[inline]
+pub fn check_md(file_path: &str) -> bool {
+  let extension = Path::new(file_path)
+    .extension()
+    .and_then(|ext| ext.to_str());
+  match extension {
+    Some(et) => {
+      let ext = et.to_lowercase();
+      ext == "md" || ext == "markdown" || ext == "text" || ext == "txt"
+    }
+    None => false,
+  }
+}
+
 // Get file_name or dir_name of the path given: (name, is_file)
 #[tauri::command]
 pub fn get_basename(file_path: &str) -> (String, bool) {
@@ -86,9 +103,16 @@ pub fn get_basename(file_path: &str) -> (String, bool) {
   let is_file = path.is_file();
   if let Some(basename) = name {
     match basename.to_str() {
-      // TODO: handle err
       Some(n) => return (n.to_string(), is_file),
-      None => return (String::new(), is_file),
+      None => {
+        do_log(
+          "Error".to_string(),
+          format!("Err on [get_basename: convert basename OsStr to str]"),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+
+        return (String::new(), is_file);
+      }
     }
   }
   (String::new(), is_file)
@@ -123,8 +147,7 @@ pub fn get_parent_dir(path: &str) -> String {
 // join path and normalize
 #[tauri::command]
 pub fn join_paths(root: &str, parts: Vec<&str>) -> String {
-  let mut root_path = 
-    Path::new(root.trim_end_matches(['/', '\\'])).to_path_buf();
+  let mut root_path = Path::new(root.trim_end_matches(['/', '\\'])).to_path_buf();
   if parts.is_empty() {
     return root_path.normalize_slash().unwrap_or_default();
   }
@@ -146,12 +169,26 @@ pub fn join_paths(root: &str, parts: Vec<&str>) -> String {
 pub fn get_simple_meta(file_path: &str) -> Result<SimpleFileMeta, String> {
   let metadata = match fs::metadata(file_path) {
     Ok(data) => data,
-    Err(e) => return Err(format!("Err on read meatadata: {:?}", e)),
+    Err(e) => {
+      do_log(
+        "Error".to_string(),
+        format!("Err on [get_simple_meta: read meatadata]: {:?}", e),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Err(format!("Err on read meatadata: {:?}", e));
+    }
   };
 
   let normalized_path = match Path::new(file_path).normalize_slash() {
     Some(normalized) => normalized,
-    None => return Err(format!("Err on normalize Path: {}", file_path)),
+    None => {
+      do_log(
+        "Error".to_string(),
+        format!("Err on [get_simple_meta: normalized_path]: {}", file_path),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Err(format!("Err on normalize Path: {}", file_path));
+    }
   };
 
   // name.ext
@@ -165,17 +202,47 @@ pub fn get_simple_meta(file_path: &str) -> Result<SimpleFileMeta, String> {
 
   let last_modified = match metadata.modified() {
     Ok(result) => result,
-    Err(_e) => SystemTime::now(), // TODO: to log the err
+    Err(e) => {
+      let now = SystemTime::now();
+      let datetime: DateTime<Local> = now.into();
+      do_log(
+        "Error".to_string(),
+        format!("Error on [get_simple_meta: get file modified]: {:?}", e),
+        format!("{}", datetime.format("%m/%d/%Y %H:%M:%S")),
+      );
+      now
+    }
   };
 
   let last_accessed = match metadata.accessed() {
     Ok(result) => result,
-    Err(_e) => SystemTime::now(), // TODO: to log the err, unit
+    Err(e) => {
+      let now = SystemTime::now();
+      let datetime: DateTime<Local> = now.into();
+      do_log(
+        "Error".to_string(),
+        format!(
+          "Error on [get_simple_meta: get file last accessed]: {:?}",
+          e
+        ),
+        format!("{}", datetime.format("%m/%d/%Y %H:%M:%S")),
+      );
+      now
+    }
   };
 
   let created = match metadata.created() {
     Ok(result) => result,
-    Err(_e) => SystemTime::now(), // TODO: to log the err
+    Err(e) => {
+      let now = SystemTime::now();
+      let datetime: DateTime<Local> = now.into();
+      do_log(
+        "Error".to_string(),
+        format!("Error on [get_simple_meta: get file created]: {:?}", e),
+        format!("{}", datetime.format("%m/%d/%Y %H:%M:%S")),
+      );
+      now
+    }
   };
 
   Ok(SimpleFileMeta {
@@ -196,14 +263,39 @@ pub fn get_simple_meta(file_path: &str) -> Result<SimpleFileMeta, String> {
 // Get meatdata of a file
 #[tauri::command]
 pub async fn get_file_meta(file_path: &str) -> Result<FileMetaData, String> {
-  let file_text = match fs::read_to_string(file_path) {
-    Ok(text) => text,
-    Err(_e) => String::new(),
-  };
-
   let meta_data = match get_simple_meta(file_path) {
     Ok(data) => data,
-    Err(e) => return Err(e),
+    Err(e) => {
+      do_log(
+        "Error".to_string(),
+        format!(
+          "Error on [get_file_meta: get_simple_meta, {}]: {:?}",
+          file_path, e
+        ),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Err(e);
+    }
+  };
+
+  // get text if md file
+  let file_text = if meta_data.is_file && check_md(file_path) {
+    match fs::read_to_string(file_path) {
+      Ok(text) => text,
+      Err(e) => {
+        do_log(
+          "Error".to_string(),
+          format!(
+            "Error on [get_file_meta: read_to_string, {}]: {:?}",
+            file_path, e
+          ),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+        String::new()
+      }
+    }
+  } else {
+    String::new()
   };
 
   Ok(FileMetaData {
@@ -232,7 +324,14 @@ pub fn is_dir(path: &Path) -> Result<bool, String> {
   } else {
     match fs::metadata(path) {
       Ok(meta) => Ok(meta.is_dir()),
-      Err(_e) => Ok(false),
+      Err(e) => {
+        do_log(
+          "Error".to_string(),
+          format!("Error on [is_dir: fs::metadata]: {:?}", e),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+        Ok(false)
+      }
     }
   }
 }
@@ -247,7 +346,14 @@ pub fn is_file(path: &Path) -> Result<bool, String> {
   } else {
     match fs::metadata(path) {
       Ok(meta) => Ok(meta.is_file()),
-      Err(_e) => Ok(false),
+      Err(e) => {
+        do_log(
+          "Error".to_string(),
+          format!("Error on [is_file: fs::metadata]: {:?}", e),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+        Ok(false)
+      }
     }
   }
 }
@@ -255,7 +361,17 @@ pub fn is_file(path: &Path) -> Result<bool, String> {
 // Read files and its information of a directory
 #[tauri::command]
 pub async fn read_directory(dir: &str) -> Result<FolderData, String> {
-  let paths = fs::read_dir(dir).map_err(|err| err.to_string())?;
+  let paths = match fs::read_dir(dir) {
+    Ok(res) => res,
+    Err(e) => {
+      do_log(
+        "Error".to_string(),
+        format!("Error on [read_directory: dir {}]: {:?}", dir, e),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Ok(FolderData::default());
+    }
+  };
 
   let mut number_of_files: u16 = 0;
   let mut files = Vec::new();
@@ -263,7 +379,14 @@ pub async fn read_directory(dir: &str) -> Result<FolderData, String> {
   for path in paths {
     let file_path = match path {
       Ok(p) => p.path().display().to_string(),
-      Err(_e) => continue,
+      Err(e) => {
+        do_log(
+          "Error".to_string(),
+          format!("Error on [read_directory: check path]: {:?}", e),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+        continue;
+      }
     };
 
     let file_info = get_file_meta(&file_path).await;
@@ -283,29 +406,20 @@ pub async fn read_directory(dir: &str) -> Result<FolderData, String> {
   })
 }
 
+// Read files and its information of a directory resursively
+pub fn read_dir(dir: &str) -> Result<Tree, String> {
+  Tree::init(dir, None, true)
+}
+
 // Get array of files of a directory
 #[tauri::command]
-pub async fn list_directory(dir: &str) -> Result<Vec<SimpleFileMeta>, String> {
-  let paths = fs::read_dir(dir).map_err(|err| err.to_string())?;
-  // println!("files in dir: {:?}", paths);
-
-  let mut filemetas = Vec::new();
-  for path in paths {
-    // raw path, not normalized yet
-    let file_path = match path {
-      Ok(p) => p.path().display().to_string(),
-      Err(_e) => continue,
-    };
-
-    let simple_meta = match get_simple_meta(&file_path) {
-      Ok(data) => data,
-      Err(_) => continue,
-    };
-
-    filemetas.push(simple_meta);
-  }
-  
-  Ok(filemetas)
+pub async fn list_directory(dir: &str) -> Result<Vec<FileMetaData>, String> {
+  let tree = Tree::init(dir, Some(1), false);
+  // println!(">> dir tree: {:?}", tree);
+  let nodes = tree.map(|t| t.children_vec()).unwrap_or_default();
+  let metas: Vec<FileMetaData> = nodes.iter().filter_map(|n| from_node(n)).collect();
+  // println!(">> dir files: {:?}", metas);
+  Ok(metas)
 }
 
 // Check if path given exists
@@ -340,8 +454,18 @@ pub async fn create_file(file_path: String) -> bool {
 // read file to string
 #[tauri::command]
 pub async fn read_file(file_path: String) -> String {
-  // TODO: handle err
-  fs::read_to_string(file_path).unwrap_or(String::from("Nothing"))
+  fs::read_to_string(&file_path)
+    .map_err(|e| {
+      do_log(
+        "Error".to_string(),
+        format!(
+          "Error on [read_file: read_to_string, {}]: {:?}",
+          file_path, e
+        ),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      )
+    })
+    .unwrap_or_else(|_| String::from("")) // nothing
 }
 
 // write to a file
@@ -352,6 +476,14 @@ pub async fn write_file(file_path: String, text: String) -> bool {
   }
 
   fs::write(file_path, text).is_ok()
+}
+
+#[tauri::command]
+pub async fn download_file(file_path: String, blob: Vec<u8>) -> bool {
+  if let Some(p) = Path::new(&file_path).parent() {
+    create_dir_recursive(p.display().to_string()).await;
+  }
+  fs::write(&file_path, blob).is_ok()
 }
 
 // rename the file
@@ -374,8 +506,8 @@ pub async fn copy_file(src_path: String, to_path: String) -> bool {
 // return (absolute_path, relative_path_to_work_dir )
 #[tauri::command]
 pub async fn copy_file_to_assets(
-  src_path: String, 
-  work_dir: String
+  src_path: String,
+  work_dir: String,
 ) -> (String, String) {
   let basename = get_basename(&src_path);
   let is_file = basename.1;
@@ -389,7 +521,7 @@ pub async fn copy_file_to_assets(
     .join(&file_name)
     .normalize_slash()
     .unwrap_or_default();
-  
+
   let relative_to_path = Path::new("./assets")
     .join(&file_name)
     .normalize_slash()
@@ -417,6 +549,14 @@ pub async fn delete_files(paths: Vec<String>) -> bool {
   trash::delete_all(paths).is_ok()
 }
 
+#[tauri::command]
+pub fn detect_lang(text: String) -> String {
+  match whatlang::detect(&text) {
+    Some(info) => info.lang().to_string(),
+    None => "".to_string(),
+  }
+}
+
 // Listen to change events in a directory
 #[tauri::command]
 pub async fn listen_dir(
@@ -424,22 +564,33 @@ pub async fn listen_dir(
   window: tauri::Window,
 ) -> Result<String, String> {
   let (tx, rx) = channel();
-
-  //let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
-
   let raw_watch = match RecommendedWatcher::new(tx, Config::default()) {
     Ok(watch) => watch,
-    Err(e) => return Err(format!("new watcher err: {}", e)),
+    Err(e) => {
+      do_log(
+        "Error".to_string(),
+        format!("Err on [listen_dir: new watcher] : {}", e),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Err(format!("new watcher err: {}", e));
+    }
   };
-  let watcher = std::sync::Arc::new(
-    std::sync::Mutex::new(raw_watch)
-  );
+  let watcher = std::sync::Arc::new(std::sync::Mutex::new(raw_watch));
 
   match watcher.lock() {
     Ok(mut mutex_watch) => {
-      mutex_watch.watch(dir.as_ref(), RecursiveMode::Recursive).unwrap_or(());
-    },
-    Err(e) => return Err(format!("lock watcher on listen err: {}", e)),
+      mutex_watch
+        .watch(dir.as_ref(), RecursiveMode::Recursive)
+        .unwrap_or(());
+    }
+    Err(e) => {
+      do_log(
+        "Error".to_string(),
+        format!("Err on [listen_dir: lock watcher]: {}", e),
+        format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+      );
+      return Err(format!("lock watcher on listen err: {}", e));
+    }
   };
 
   window.once("unlisten_dir", move |_| {
@@ -450,15 +601,14 @@ pub async fn listen_dir(
 
   loop {
     match rx.recv() {
-      Ok(event) => { 
+      Ok(event) => {
         match event {
           Ok(RawEvent {
-            paths,  // Vec<PthBuff>
+            paths,  // Vec<PathBuff>
             kind,   // EventKind: Access,Create,Modify,Remove
             ..      // attrs,  // EventAttributes: tracker, flag... 
           }) => {
             // println!("event, paths: {:?}, kind: {:?}, attrs: {:?}", paths, kind, attrs);
-
             let event_kind = match kind {
               // EventKind::Access(_) => "access",
               EventKind::Create(_) => "create",
@@ -477,10 +627,12 @@ pub async fn listen_dir(
               EventKind::Remove(_) => "remove",
               _ => "unknown", 
             };
-            
+
+            // emit event here, then Frontend will listen the event.
+            // frontend: src/file/directory.ts/DirectoryAPI/listen
             if event_kind != "unknown" {
               window.emit(
-                "changes", // then Frontend listen the event changes.
+                "changes", 
                 EventPayload {
                   paths: paths
                     .iter()
@@ -492,10 +644,24 @@ pub async fn listen_dir(
               .unwrap_or(());
             }
           },
-          Err(e) => return Err(format!("error on revieve event: {}", e)),
+          Err(e) => {
+            do_log(
+              "Error".to_string(), 
+              format!("error on [listen_dir: revieve event]: {}", e), 
+              format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S"))
+            );
+            return Err(format!("error on revieve event: {}", e));
+          },
         }
-      },
-      Err(e) => break Err(e.to_string()),
+      }
+      Err(e) => {
+        do_log(
+          "Error".to_string(),
+          format!("error on [listen_dir: revieve]: {}", e),
+          format!("{}", Local::now().format("%m/%d/%Y %H:%M:%S")),
+        );
+        break Err(e.to_string());
+      }
     }
   }
 }
@@ -504,4 +670,31 @@ pub async fn listen_dir(
 #[tauri::command]
 pub fn open_url(url: String) -> bool {
   open::that(url).is_ok()
+}
+
+#[tauri::command]
+pub fn open_link(app: AppHandle, url: String) {
+  api::shell::open(&app.shell_scope(), url, None).unwrap_or(());
+}
+
+/// watch event as a bridge from injected script to frontend via invoke()
+// workflow: 
+// - can invoke() in inject scripts 
+// - listen emited event and handle on frontend: 
+//   src/file/directory.ts/DirectoryAPI/listen
+#[tauri::command]
+pub async fn watch_event(
+  id: String, 
+  ev: String,
+  window: tauri::Window,
+) {
+  // println!("watch: {ev}, {id}");
+  window.emit(
+    "changes",
+    EventPayload {
+      paths: vec![id],
+      event: ev,
+    },
+  )
+  .unwrap_or(());
 }

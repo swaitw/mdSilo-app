@@ -1,21 +1,21 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import MsEditor from 'mdsmirror';
-import { useStore } from 'lib/store';
+import { store, useStore } from 'lib/store';
 import ErrorBoundary from 'components/misc/ErrorBoundary';
-import FindOrCreateInput from 'components/note/NoteNewInput';
 import { matchSort, SearchLeaf } from 'components/sidebar/SidebarSearch';
 import Tree, { TreeNode } from 'components/misc/Tree';
 import useNoteSearch from 'editor/hooks/useNoteSearch';
 import useTasks from 'editor/hooks/useTasks';
 import useOnNoteLinkClick from 'editor/hooks/useOnNoteLinkClick';
-import { getStrDate } from 'utils/helper';
+import { getStrDate, isUrl } from 'utils/helper';
 import { loadDir } from 'file/open';
 
 export default function Tasks() {
-  const currentDir = useStore((state) => state.currentDir);
   const isLoaded = useStore((state) => state.isLoaded);
   const setIsLoaded = useStore((state) => state.setIsLoaded);
   const initDir = useStore((state) => state.initDir);
+
   // console.log("t loaded?", isLoaded);
   useEffect(() => {
     if (!isLoaded && initDir) {
@@ -24,6 +24,7 @@ export default function Tasks() {
   }, [initDir, isLoaded, setIsLoaded]);
 
   const darkMode = useStore((state) => state.darkMode);
+  const isRTL = useStore((state) => state.isRTL);
   const { onClick: onNoteLinkClick } = useOnNoteLinkClick();
 
   // per checkbox
@@ -34,20 +35,6 @@ export default function Tasks() {
     .flat()
     .sort((a, b) => Number(a.completed) - Number(b.completed));
   const [perNote, setPerNote] = useState(true);
-  
-  // console.log("check box tasks", checkboxTasks)
-  // const checkboxs = useMemo(() => checkboxTasks.reduce(
-  //   (txt, doc) => txt + (
-  //     `### ${getStrDate(doc.note.updated_at)} : ${doc.note.title}` + '\n' 
-  //     + 
-  //     doc.tasks.reduce(
-  //       (box, item) => box + '\n' + `- [${item.completed ? 'X' : ' '}] ${item.text}`, ''
-  //     )
-  //     +
-  //     '\n'
-  //   ), ''
-  // ), [checkboxTasks]);
-  // console.log("check box text", checkboxs)
 
   // per hashtag
   // 
@@ -56,9 +43,7 @@ export default function Tasks() {
     (ids: string[]) => setCollapseIds(ids), []
   );
 
-  const search = useNoteSearch(
-    { searchContent: true, extendedSearch: true }
-  );
+  const search = useNoteSearch({ searchHashTag: true, extendedSearch: true });
   const getTaskNotes = useCallback((searchQuery: string) => {
     const searchResults = search(searchQuery);
     // console.log("search res: ", searchQuery, searchResults);
@@ -102,7 +87,7 @@ export default function Tasks() {
           <b className="py-1 text-xl">Doing</b>
         </div>
       ),
-      children: getTaskNotes('#doing#'),
+      children: getTaskNotes('doing'),
     },
     {
       id: 'todo',
@@ -111,7 +96,7 @@ export default function Tasks() {
           <b className="py-1 text-xl">To Do</b>
         </div>
       ),
-      children: getTaskNotes('#todo#'),
+      children: getTaskNotes('todo'),
     },
     {
       id: 'done',
@@ -120,26 +105,39 @@ export default function Tasks() {
           <b className="py-1 text-xl">Done</b>
         </div>
       ),
-      children: getTaskNotes('#done#'),
+      children: getTaskNotes('done'),
     },
   ], [getTaskNotes]);
 
+  const onOpenLink = useCallback(
+    async (href: string) => {
+      if (!isUrl(href)) {
+        // find the note per title
+        const title = decodeURI(href.trim());
+        const storeNotes = store.getState().notes;
+        const toNote = Object.values(storeNotes).find((n) => (n.title === title));
+        if (!toNote) { return; }
+        onNoteLinkClick(toNote.id);
+      }
+    },
+    [onNoteLinkClick]
+  );
+
   return (
-    <>
-      <ErrorBoundary>
+    <ErrorBoundary>
+      <div className="h-full">
         <div className="flex flex-1 flex-col flex-shrink-0 md:flex-shrink p-6 w-full mx-auto md:w-128 lg:w-160 xl:w-192 bg-white dark:bg-black dark:text-gray-200 overlfow-y-auto">
-          <div className="flex justify-center my-6">
-            {currentDir ? (
-              <FindOrCreateInput
-                className="w-full bg-white rounded shadow-popover dark:bg-gray-800"
-              />) : null
-            }
-          </div>
           <div className="flex my-1 p-1 rounded">
-            <button className="text-red-500 text-xl mr-2" onClick={() => setPerNote(true)}>
+            <button 
+              className={`text-xl mr-2 ${perNote ? 'text-red-500' : ''}`} 
+              onClick={() => setPerNote(true)}
+            >
               PER NOTE
             </button>  
-            <button className="text-blue-500 text-xl" onClick={() => setPerNote(false)}>
+            <button 
+              className={`text-xl ml-2 ${perNote ? '' : 'text-red-500'}`}
+              onClick={() => setPerNote(false)}
+            >
               PER COMPLETION
             </button>
           </div>
@@ -155,12 +153,12 @@ export default function Tasks() {
                     {`${getStrDate(doc.note.updated_at)} : ${doc.note.title}`}
                   </button>
                   <MsEditor 
-                    value={doc.tasks.reduce(
-                      (box, item) => box + '\n' + `- [${item.completed ? 'X' : ' '}] ${item.text}`, '')
-                    } 
+                    value={doc.tasks.reduce((box, item) => 
+                      box + '\n' + `- [${item.completed ? 'X' : ' '}] ${item.text}`, ''
+                    )} 
                     readOnly={true} 
                     dark={darkMode} 
-                    disables={['sub']} 
+                    dir={isRTL ? 'rtl' : 'ltr'} 
                   />
                 </div>
               ))}
@@ -168,18 +166,21 @@ export default function Tasks() {
             ) : (
               <div> 
                 <MsEditor 
-                  value={allTasks.reduce(
-                    (box, item) => box + '\n' + `- [${item.completed ? 'X' : ' '}] ${item.text}`, '')
-                  } 
-                  readOnly={true} 
+                  value={allTasks.reduce((box, item) => 
+                    box + '\n' 
+                    + `- [${item.completed ? 'X' : ' '}] ${item.text}  [[${item.title} | ...]]`
+                    , ''
+                  )} 
+                  onOpenLink={onOpenLink}
+                  readOnly={false} 
                   dark={darkMode} 
-                  disables={['sub']} 
+                  dir={isRTL ? 'rtl' : 'ltr'}
                 />
               </div>
             )}
           </div>
           <div className="flex my-1 p-1 rounded">
-            <b className="mr-2">PER HASHTAG: </b>
+            <b className="text-xl mr-2">PER HASHTAG: </b>
             <button className="text-red-500 text-xl mr-2" onClick={() => onClose(['done','todo'])}>
               #doing
             </button>  
@@ -194,8 +195,8 @@ export default function Tasks() {
             <Tree data={tasks} className={""} collapseAll={false} collapseIds={collapseIds} />
           </div>
         </div>
-      </ErrorBoundary>
-    </>
+      </div>
+    </ErrorBoundary>
   );
 }
 

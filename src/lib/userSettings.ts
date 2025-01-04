@@ -24,6 +24,14 @@ export type UserSettings = {
   setUserId: Setter<string>;
   darkMode: boolean;
   setDarkMode: Setter<boolean>;
+  font: string;
+  setFont: Setter<string>;
+  fontSize: number;
+  setFontSize: Setter<number>;
+  fontWt: number;
+  setFontWt: Setter<number>;
+  lineHeight: number;
+  setLineHeight: Setter<number>;
   isSidebarOpen: boolean;
   setIsSidebarOpen: Setter<boolean>;
   isSettingsOpen: boolean;
@@ -38,6 +46,10 @@ export type UserSettings = {
   setNoteSort: Setter<Sort>;
   isCheckSpellOn: boolean;
   setIsCheckSpellOn: Setter<boolean>;
+  isOpenPreOn: boolean;
+  setIsOpenPreOn: Setter<boolean>;
+  showHistory: boolean,
+  setShowHistory: Setter<boolean>;
   readMode: boolean;
   setReadMode: Setter<boolean>;
   rawMode: string; // 'raw' | 'wysiwyg' | 'mindmap'; 
@@ -59,6 +71,14 @@ const userSettingsSlice = (
   setUserId: setter(set, 'userId'),
   darkMode: true,
   setDarkMode: setter(set, 'darkMode'),
+  font: '',
+  setFont: setter(set, 'font'),
+  fontSize: 1.1,
+  setFontSize: setter(set, 'fontSize'),
+  fontWt: 400,
+  setFontWt: setter(set, 'fontWt'),
+  lineHeight: 1.6,
+  setLineHeight: setter(set, 'lineHeight'),
   isSidebarOpen: true,
   setIsSidebarOpen: setter(set, 'isSidebarOpen'),
   isSettingsOpen: false,
@@ -73,11 +93,15 @@ const userSettingsSlice = (
   setNoteSort: setter(set, 'noteSort'),
   isCheckSpellOn: true,
   setIsCheckSpellOn: setter(set, 'isCheckSpellOn'),
+  isOpenPreOn: true,
+  setIsOpenPreOn: setter(set, 'isOpenPreOn'),
+  showHistory: false,
+  setShowHistory:setter(set, 'showHistory'),
   readMode: false,
   setReadMode: setter(set, 'readMode'),
   rawMode: 'wysiwyg',
   setRawMode: setter(set, 'rawMode'),
-  useAsset: false,
+  useAsset: true,
   setUseAsset: setter(set, 'useAsset'),
   recentDir: [],
   setRecentDir: setter(set, 'recentDir'),

@@ -1,14 +1,16 @@
 import type { ForwardedRef } from 'react';
 import { forwardRef, useCallback, useMemo, useState } from 'react';
-import type { TablerIcon } from '@tabler/icons';
-import { IconFilePlus, IconSearch } from '@tabler/icons';
+import type { Icon } from '@tabler/icons-react';
+import { IconFilePlus, IconSearch } from '@tabler/icons-react';
 import { useCurrentViewContext } from 'context/useCurrentView';
 import useNoteSearch from 'editor/hooks/useNoteSearch';
 import { ciStringEqual, regDateStr } from 'utils/helper';
 import { joinPaths } from 'file/util';
 import { openFilePath } from 'file/open';
+import { writeFile } from 'file/write';
 import { Notes, store, useStore } from 'lib/store';
 import { defaultNote } from 'types/model';
+import { updateCardItems } from 'components/kanban/updateCard';
 
 enum OptionType {
   NOTE,
@@ -19,7 +21,7 @@ type Option = {
   id: string;
   type: OptionType;
   text: string;
-  icon?: TablerIcon;
+  icon?: Icon;
 };
 
 type Props = {
@@ -34,6 +36,7 @@ function FindOrCreateInput(props: Props, ref: ForwardedRef<HTMLInputElement>) {
   const dispatch = currentView.dispatch;
 
   const currentDir = useStore((state) => state.currentDir);
+  const currentCard = useStore((state) => state.currentCard);
 
   const [inputText, setInputText] = useState('');
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
@@ -75,6 +78,9 @@ function FindOrCreateInput(props: Props, ref: ForwardedRef<HTMLInputElement>) {
       if (option.type === OptionType.NEW_NOTE) {
         if (!currentDir) return;
         const notePath = await joinPaths(currentDir, [`${inputTxt}.md`]);
+        if (currentCard) {
+          await updateCardItems(currentCard, notePath);
+        }
         const note = { 
           ...defaultNote, 
           id: notePath, 
@@ -82,6 +88,7 @@ function FindOrCreateInput(props: Props, ref: ForwardedRef<HTMLInputElement>) {
           file_path: notePath,
           is_daily: regDateStr.test(inputTxt),
         };
+        await writeFile(notePath, ' ');
         store.getState().upsertNote(note);
         store.getState().upsertTree(currentDir, [note]);
         // navigate to md view
@@ -91,10 +98,13 @@ function FindOrCreateInput(props: Props, ref: ForwardedRef<HTMLInputElement>) {
         dispatch({view: 'md', params: {noteId: note.id}});
       } else if (option.type === OptionType.NOTE) {
         await openFilePath(option.id, true);
+        if (currentCard) {
+          await updateCardItems(currentCard, option.id);
+        }
         dispatch({view: 'md', params: {noteId: option.id}});
       }
     },
-    [dispatch, inputTxt, onOptionClickCallback, currentDir]
+    [onOptionClickCallback, currentDir, inputTxt, currentCard, dispatch]
   );
 
   const onKeyDown = useCallback(

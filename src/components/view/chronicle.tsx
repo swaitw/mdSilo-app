@@ -9,6 +9,7 @@ import { dateCompare, getStrDate, regDateStr } from 'utils/helper';
 import { joinPaths } from 'file/util';
 import { defaultNote, Note } from 'types/model';
 import { loadDir, openFilePath } from 'file/open';
+import { checkFileIsMd } from 'file/process';
 
 export default function Chronicle() {
   const isLoaded = useStore((state) => state.isLoaded);
@@ -31,22 +32,22 @@ export default function Chronicle() {
     if (!note) {
       const newNote: Note = {
         ...defaultNote,
-        id: noteId, 
-        title: date, 
+        id: noteId,
+        title: date,
         file_path: noteId,
-        is_daily: true, 
+        is_daily: true,
       };
       store.getState().upsertNote(newNote);
       const dailyDir = await joinPaths(initDir, ['daily']);
       const newDailyDir: Note = {
         ...defaultNote,
-        id: dailyDir, 
-        title: 'daily', 
+        id: dailyDir,
+        title: 'daily',
         file_path: dailyDir,
-        is_dir: true, 
+        is_dir: true,
       };
-      store.getState().upsertTree(initDir, [newDailyDir]); 
-      store.getState().upsertTree(dailyDir, [newNote]); 
+      store.getState().upsertTree(initDir, [newDailyDir]);
+      store.getState().upsertTree(dailyDir, [newNote]);
       const cNote: Notes = {};
       cNote[noteId] = newNote;
       store.getState().setCurrentNote(cNote);
@@ -95,10 +96,10 @@ function HeatMapAndList(props: Props) {
     const noteList: Note[] = Object.values(notes) || [];
     return noteList;
   }, [notes]);
-  
+
   const sortedNotes = useMemo(() => {
-    const myNotes = noteList.filter(n => !n.is_daily && !n.is_dir);
-    myNotes.sort((n1, n2) => dateCompare(n2.created_at, n1.created_at));
+    const myNotes = noteList.filter(n => !n.is_daily && !n.is_dir && checkFileIsMd(n.id));
+    myNotes.sort((n1, n2) => dateCompare(n2.updated_at, n1.updated_at));
     return myNotes;
   }, [noteList])
 
@@ -108,7 +109,7 @@ function HeatMapAndList(props: Props) {
   }, []);
 
   const dateArr = useMemo(() => {
-    const upDates = sortedNotes.map(n => getStrDate(n.created_at));
+    const upDates = sortedNotes.map(n => getStrDate(n.updated_at));
     const dateSet = new Set(upDates);
     const dates = Array.from(dateSet);
     const first = firstDay ? [firstDay] : [];
@@ -118,13 +119,15 @@ function HeatMapAndList(props: Props) {
 
   // get notes on a date
   const getDayNotes = useCallback(
-    (date: string) => sortedNotes.filter(n => getStrDate(n.created_at) === date), 
+    (date: string) => sortedNotes.filter(n => getStrDate(n.updated_at) === date),
     [sortedNotes]
   );
-  
+
   return (
     <>
-      <HeatMap noteList={noteList} onClickCell={showDailyNote} />
+      <div className="flex items-center justify-center overlfow-auto">
+        <HeatMap noteList={noteList} onClickCell={showDailyNote} />
+      </div>
       <div className="overlfow-auto">
         {dateArr.slice(0,42).map((d, idx) => (
           <NoteSumList
@@ -132,7 +135,7 @@ function HeatMapAndList(props: Props) {
             anchor={d}
             notes={getDayNotes(d)}
             isDate={true}
-            onClick={onNewDailyNote} 
+            onClick={onNewDailyNote}
           />
         ))}
       </div>

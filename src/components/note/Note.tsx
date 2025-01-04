@@ -2,20 +2,23 @@ import React, { memo, useCallback, useMemo, useEffect, useRef, useState } from '
 import MsEditor, { JSONContent, Attach, embeds } from "mdsmirror";
 import { invoke } from '@tauri-apps/api';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
+import copy from "copy-to-clipboard";
+import { IconCaretRight } from '@tabler/icons-react';
 import Title from 'components/note/Title';
 import Toc, { Heading } from 'components/note/Toc';
 import RawMarkdown from 'components/md/Markdown';
 import { Mindmap } from 'components/mindmap/mindmap';
 import ErrorBoundary from 'components/misc/ErrorBoundary';
-import { Notes, SidebarTab, store, useStore } from 'lib/store';
+import { updateCardLinks } from 'components/kanban/updateCard';
+import { SidebarTab, store, useStore } from 'lib/store';
 import type { Note as NoteType } from 'types/model';
 import { defaultNote } from 'types/model';
 import useNoteSearch from 'editor/hooks/useNoteSearch';
 import { listDirPath } from 'editor/hooks/useOpen';
 import { useCurrentViewContext } from 'context/useCurrentView';
 import { ProvideCurrentMd } from 'context/useCurrentMd';
-import { ciStringEqual, regDateStr, isUrl, decodeHTMLEntity } from 'utils/helper';
-import imageExtensions from 'utils/image-extensions';
+import { ciStringEqual, regDateStr, isUrl, decodeHTMLEntity, emitCustomEvent } from 'utils/helper';
+import { imageExtensions, docExtensions } from 'utils/file-extensions';
 import FileAPI from 'file/files';
 import { writeFile, deleteFile, writeJsonFile } from 'file/write';
 import { openFileDilog, openFilePath, openUrl, saveDilog } from 'file/open';
@@ -27,6 +30,7 @@ import NoteHeader from './NoteHeader';
 import Backlinks from './backlinks/Backlinks';
 import updateBacklinks from './backlinks/updateBacklinks';
 
+
 type Props = {
   noteId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,6 +41,7 @@ type Props = {
 function Note(props: Props) {
   const { noteId, className } = props;
   // console.log("loading",noteId)
+  const [showBacklink, setShowBacklink] = useState(false);
   const [headings, setHeadings] = useState<Heading[]>([]);
   const editorInstance = useRef<MsEditor>(null);
   const getHeading = () => {
@@ -45,9 +50,17 @@ function Note(props: Props) {
     setHeadings(hdings ?? []);
   };
 
-  useEffect(() => { getHeading(); }, [noteId]); // to trigger change on dep change
+  useEffect(() => { getHeading(); }, [noteId]); // to trigger change on dep change 
+
+  useEffect(() => {
+    emitCustomEvent("PageLoaded", noteId);
+  }, [noteId]);
 
   const darkMode = useStore((state) => state.darkMode);
+  const font = useStore((state) => state.font);
+  const fontSize = useStore((state) => state.fontSize);
+  const fontWt = useStore((state) => state.fontWt);
+  const lineHt = useStore((state) => state.lineHeight);
   const rawMode = useStore((state) => state.rawMode);
   const readMode = useStore((state) => state.readMode);
   const isRTL = useStore((state) => state.isRTL);
@@ -86,65 +99,31 @@ function Note(props: Props) {
   ), [dispatch, noteId, state]);
 
   // note action
-  const updateNote = useStore((state) => state.updateNote);
   const deleteNote = useStore((state) => state.deleteNote);
   const upsertNote = useStore((state) => state.upsertNote);
   const upsertTree = useStore((state) => state.upsertTree);
 
-  // for split view
-  const [rawCtn, setRawCtn] = useState<string | null>(null);
-  const [mdCtn, setMdCtn] = useState<string | null>(null);
-  const [focusOn, setFocusOn] = useState<string | null>(null);
-  const switchFocus = useCallback(
-    (on: string) => {
-      // refresh current note
-      const cNote: Notes = {};
-      cNote[noteId] = storeNotes[noteId];
-      store.getState().setCurrentNote(cNote);
-      // switch focus 
-      setFocusOn(on);
-    }, [noteId, storeNotes]
-  );
-
-  // update locally
+  // write to local file
   const onContentChange = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async (text: string, json: JSONContent) => {
       // console.log("on content change", text.length, json);
-      // write to local file and store
-      updateNote({ id: noteId, content: text });
-      if (rawMode === 'split' && focusOn === 'wysiwyg') { 
-        setMdCtn(null);
-        setRawCtn(text); 
-      }
       await writeFile(notePath, text);
-      if (initDir) { 
-        await writeJsonFile(initDir); 
-      }
       // update TOC if any 
       getHeading();
     },
-    [focusOn, initDir, noteId, notePath, rawMode, updateNote]
+    [notePath]
   );
 
   const onMarkdownChange = useCallback(
     async (text: string) => {
       // console.log("on markdown content change", text);
-      // write to local file and store
-      updateNote({ id: noteId, content: text });
-      if (rawMode === 'split' && focusOn === 'raw') { 
-        setRawCtn(null); 
-        setMdCtn(text); 
-      }
       await writeFile(notePath, text);
-      if (initDir) { 
-        await writeJsonFile(initDir); 
-      }
     },
-    [updateNote, noteId, rawMode, focusOn, notePath, initDir]
+    [notePath]
   );
 
-  setWindowTitle(`/ ${title} - mdSilo`);
+  setWindowTitle(`/ ${title} - mdSilo`, useStore((state) => state.isLoading));
   // update locally
   const onTitleChange = useCallback(
     async (newtitle: string) => {
@@ -179,6 +158,7 @@ function Note(props: Props) {
         };
         upsertNote(newNote);
         upsertTree(dirPath, [newNote]);
+        await updateCardLinks(newPath, oldPath);
         // 5- nav to renamed note
         await openFilePath(newPath, true);
         dispatch({view: 'md', params: {noteId: newPath}});
@@ -193,9 +173,10 @@ function Note(props: Props) {
 
   // Search
   const onSearchText = useCallback(
-    async (text: string) => {
+    async (text: string, ty?: string) => {
       store.getState().setSidebarTab(SidebarTab.Search);
       store.getState().setSidebarSearchQuery(text);
+      store.getState().setSidebarSearchType(ty || 'content');
       store.getState().setIsSidebarOpen(true);
     },
     []
@@ -210,7 +191,7 @@ function Note(props: Props) {
         const itemTitle = res.item.title.trim();
         const search = {
           title: itemTitle,
-          url: itemTitle.replaceAll(/\s/g, '_'),
+          url: encodeURI(itemTitle), // used as [title](encodedTitle)
         };
         return search;
       });
@@ -219,18 +200,18 @@ function Note(props: Props) {
     [search]
   );
 
-  // Create new note 
+  // Create new note, return encoded title as url: [title](encoded title as url)
   const onCreateNote = useCallback(
     async (title: string) => {
       title = title.trim();
       const existingNote = Object.values(storeNotes).find((n) => (n.title === title));
       if (existingNote) {
-        return existingNote.title.trim().replaceAll(/\s/g, '_');
+        return encodeURI(existingNote.title.trim());
       }
       const parentDir = await getDirPath(notePath);
       await createNewNote(parentDir, title);
       
-      return title.replaceAll(/\s/g, '_');
+      return encodeURI(title);
     },
     [notePath, storeNotes]
   );
@@ -242,7 +223,7 @@ function Note(props: Props) {
         await openUrl(href);
       } else {
         // find the note per title
-        const title = href.replaceAll('_', ' ').trim();
+        const title = decodeURI(href.trim()); 
         // ISSUE ALERT: 
         // maybe more than one notes with same title(ci), 
         // but only link to first searched one 
@@ -265,7 +246,7 @@ function Note(props: Props) {
   // attach file 
   const onAttachFile = useCallback(
     async (accept: string) => {
-      const ext = accept === 'image/*' ? imageExtensions : ['pdf'];
+      const ext = accept === 'image/*' ? imageExtensions : docExtensions;
       const filePath = await openFileDilog(ext, false);
       if (filePath && typeof filePath === 'string') {
         let fullPath = filePath;
@@ -277,13 +258,8 @@ function Note(props: Props) {
           );
           // console.log("asset path", assetPath)
           fullPath = assetPath[0] || filePath;
-
-          if (accept === 'image/*') {
-            // now it is relative path
-            fileUrl = encodeURI(assetPath[1] || filePath);
-          } else {
-            fileUrl = encodeURI(assetPath[0] || filePath);
-          }
+          // now it is relative path
+          fileUrl = encodeURI(assetPath[1] || filePath);
         } else {
           fileUrl = accept === 'image/*' 
             ? convertFileSrc(filePath)
@@ -311,9 +287,12 @@ function Note(props: Props) {
 
    // open Attachment file using defult application 
   const onClickAttachment = useCallback(async (href: string) => {
-    // console.log("file href", href, decodeURI(href))
-    await openUrl(decodeURI(href));
-  }, []);
+    const realHref = href.startsWith('./') && initDir
+      ? href.replace('.', initDir)
+      : href;
+    // console.log("file href", href, decodeURI(realHref), initDir);
+    await openUrl(decodeURI(realHref));
+  }, [initDir]);
 
   const onSaveDiagram = useCallback(async (svg: string, ty: string) => {
     if (!initDir) return;
@@ -325,8 +304,18 @@ function Note(props: Props) {
     await writeFile(saveDir, rawSVG);
   }, [initDir, title]);
 
+  // copy heading hash or hashtag hash
+  const onCopyHash = useCallback(
+    (hash: string) => { copy(`${title}${hash}`); }, [title]
+  );
+
+  const customTheme = {
+    fontFamily: `${font}`,
+    fontScale: [fontSize / 1.1, lineHt / 1.6, fontWt / 400],
+  };
+
   const noteContainerClassName =
-    'flex flex-col flex-shrink-0 md:flex-shrink w-full bg-white dark:bg-black dark:text-gray-200';
+    'flex flex-col w-full bg-white dark:bg-black dark:text-gray-200';
   const errorContainerClassName = 
     `${noteContainerClassName} items-center justify-center h-full p-4`;
 
@@ -335,7 +324,7 @@ function Note(props: Props) {
   if (!isNoteExists) {
     return (
       <div className={errorContainerClassName}>
-        <p>It does not look like this note exists: {noteId}</p>
+        <p>The note does not exist: {noteId}</p>
       </div>
     );
   }
@@ -350,7 +339,7 @@ function Note(props: Props) {
     >
       <ProvideCurrentMd value={currentNoteValue}>
         <div id={noteId} className={`${noteContainerClassName} ${className}`}>
-          <NoteHeader />
+          <NoteHeader setShowBacklink={setShowBacklink} />
           <div className="flex flex-col flex-1 overflow-x-hidden overflow-y-auto">
             <div className="flex flex-col flex-1 w-full mx-auto px-8 md:px-12">
               <div
@@ -374,7 +363,7 @@ function Note(props: Props) {
                 ? (<Toc headings={headings} />) 
                 : null
               }
-              <div className="flex-1 px-2 pt-2 pb-8">
+              <div className="flex-1 px-2 pt-2 pb-8" id="note-content">
                 {rawMode === 'raw' ? (
                   <RawMarkdown
                     key={`raw-${title}`}
@@ -384,29 +373,6 @@ function Note(props: Props) {
                     readMode={readMode}
                     className={"text-xl"}
                   />
-                ) : rawMode === 'wysiwyg' ? (
-                  <MsEditor 
-                    key={`wys-${noteId}`}
-                    ref={editorInstance}
-                    value={mdContent}
-                    dark={darkMode}
-                    readOnly={readMode}
-                    readOnlyWriteCheckboxes={readMode}
-                    dir={isRTL ? 'rtl' : 'ltr'}
-                    onChange={onContentChange}
-                    onSearchLink={onSearchNote}
-                    onCreateLink={onCreateNote}
-                    onSearchSelectText={(txt) => onSearchText(txt)}
-                    onClickHashtag={(txt) => onSearchText(`#${txt}#`)}
-                    onOpenLink={onOpenLink} 
-                    attachFile={onAttachFile} 
-                    onClickAttachment={onClickAttachment} 
-                    onSaveDiagram={onSaveDiagram} 
-                    embeds={embeds}
-                    disables={['sub']}
-                    rootPath={initDir}
-                    protocol={protocol}
-                  />
                 ) : rawMode === 'mindmap' ? (
                   <Mindmap 
                     key={`mp-${noteId}`} 
@@ -415,50 +381,48 @@ function Note(props: Props) {
                     initDir={initDir} 
                   />
                 ) : (
-                  <div className="grid grid-cols-2 gap-1 justify-between">
-                    <div className="flex-1 mr-4 border-r-2 border-gray-200 dark:border-gray-600">
-                      <RawMarkdown
-                        key={`raws-${title}`}
-                        initialContent={focusOn === 'wysiwyg' ? rawCtn || mdContent : mdContent}
-                        onChange={onMarkdownChange}
-                        dark={darkMode}
-                        readMode={readMode}
-                        className={"text-xl"}
-                        onFocus={() => switchFocus('raw')}
-                      />
-                    </div>
-                    <div className="flex-1 ml-4">
-                      <MsEditor 
-                        key={`wyss-${title}`}
-                        ref={editorInstance}
-                        value={focusOn === 'raw' ? mdCtn || mdContent : mdContent}
-                        dark={darkMode}
-                        readOnly={readMode}
-                        readOnlyWriteCheckboxes={readMode}
-                        dir={isRTL ? 'rtl' : 'ltr'}
-                        onChange={onContentChange}
-                        onSearchLink={onSearchNote}
-                        onCreateLink={onCreateNote}
-                        onSearchSelectText={(txt) => onSearchText(txt)}
-                        onClickHashtag={(txt) => onSearchText(`#${txt}#`)}
-                        onOpenLink={onOpenLink} 
-                        attachFile={onAttachFile} 
-                        onClickAttachment={onClickAttachment} 
-                        embeds={embeds}
-                        disables={['sub']}
-                        rootPath={initDir}
-                        protocol={protocol}
-                        onFocus={() => switchFocus('wysiwyg')}
-                      />
-                    </div>
-                  </div>
+                  <MsEditor 
+                    key={`wys-${noteId}`}
+                    ref={editorInstance}
+                    value={mdContent}
+                    dark={darkMode}
+                    readOnly={readMode}
+                    readOnlyWriteCheckboxes={readMode}
+                    dir={isRTL ? 'rtl' : 'ltr'}
+                    theme={customTheme}
+                    onChange={onContentChange}
+                    onSearchLink={onSearchNote}
+                    onCreateLink={onCreateNote}
+                    onSearchSelectText={(txt) => onSearchText(txt)}
+                    onClickHashtag={(txt) => onSearchText(txt, 'hashtag')}
+                    onOpenLink={onOpenLink} 
+                    attachFile={onAttachFile} 
+                    onClickAttachment={onClickAttachment} 
+                    onSaveDiagram={onSaveDiagram} 
+                    onCopyHash={onCopyHash}
+                    embeds={embeds}
+                    disables={['sub']}
+                    rootPath={initDir}
+                    protocol={protocol}
+                  />
                 )}
               </div>
+              <button
+                className="inline-flex items-center p-1 mt-2 group"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowBacklink(!showBacklink);
+                }}
+              >
+                <IconCaretRight
+                  className={`mr-1 text-gray-500 dark:text-gray-200 ${showBacklink ? 'rotate-90' : ''}`}
+                  size={16}
+                  fill="currentColor"
+                />
+                  BackLinks
+              </button>
               <div className="pt-2 border-t-2 border-gray-200 dark:border-gray-600">
-                {rawMode !== 'wysiwyg' 
-                  ? null 
-                  : (<Backlinks className="mx-4 mb-8" isCollapse={true} />)
-                }
+                {showBacklink ? (<Backlinks className="mx-4 mb-8" isCollapse={false} />) : null}
               </div>
             </div>
           </div>

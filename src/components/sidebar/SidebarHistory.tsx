@@ -1,5 +1,5 @@
-import React, { memo, useCallback } from 'react';
-import { IconPin, IconTrash } from '@tabler/icons';
+import React, { memo, useCallback, useEffect } from 'react';
+import { IconPin, IconTrash } from '@tabler/icons-react';
 import { useStore } from 'lib/store';
 import Tooltip from 'components/misc/Tooltip';
 import { listInitDir } from 'editor/hooks/useOpen';
@@ -23,6 +23,19 @@ function SidebarHistory(props: Props) {
       await listInitDir(dir);
     }, []
   );
+
+  const isOpenPreOn = useStore((state) => state.isOpenPreOn);
+  const showHistory = useStore((state) => state.showHistory);
+  let isOpened = false;
+  useEffect(() => { 
+    if (!isOpenPreOn || showHistory || isOpened) return;
+    const recentDirPath = history.length > 0 ? history[history.length - 1] : '';
+    if (!recentDirPath) return;
+    listInitDir(recentDirPath).then(() => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      isOpened = true;
+    }); 
+  }, [history]);
 
   return (
     <div className={`flex flex-col flex-1 overflow-x-hidden ${className}`}>

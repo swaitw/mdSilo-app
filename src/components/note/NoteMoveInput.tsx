@@ -1,6 +1,6 @@
 import type { ForwardedRef } from 'react';
 import { forwardRef, useCallback, useMemo, useState, useEffect } from 'react';
-import { IconChevronsUp, IconFolderPlus, IconSearch, TablerIcon } from '@tabler/icons';
+import { IconChevronsUp, IconFolderPlus, IconSearch, Icon } from '@tabler/icons-react';
 import useNoteSearch from 'editor/hooks/useNoteSearch';
 import { store, useStore } from 'lib/store';
 import type { Note } from 'types/model';
@@ -19,7 +19,7 @@ type Option = {
   id: string;
   type: OptionType;
   text: string;
-  icon?: TablerIcon;
+  icon?: Icon;
 };
 
 type Props = {
@@ -68,7 +68,7 @@ function MoveToInput(props: Props, ref: ForwardedRef<HTMLInputElement>) {
       });
       result.push(
         ...Object.values(noteTree).flat()
-          .filter((item) => item.isDir && item.id !== noteId)
+          .filter((item) => item.is_dir && item.id !== noteId)
           .map((item) => ({
             id: item.id,
             type: OptionType.DIR,

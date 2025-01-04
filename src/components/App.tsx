@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri';
 import { useMemo, useEffect } from 'react';
-import classNames from 'classnames';
 import 'styles/styles.css';
 import 'tippy.js/dist/tippy.css';
 import { ProvideCurrentView } from 'context/useCurrentView';
@@ -8,6 +7,7 @@ import useHotkeys from 'editor/hooks/useHotkeys';
 import { useStore, SidebarTab } from 'lib/store';
 import SideMenu from './sidebar/SideMenu';
 import Sidebar from './sidebar/Sidebar';
+import StatusBar from './sidebar/StatusBar';
 import MainView from './view/MainView';
 import FindOrCreateModal from './note/NoteNewModal';
 import SettingsModal from './settings/SettingsModal';
@@ -29,7 +29,7 @@ const App = () => {
   const hotkeys = useMemo(
     () => [
       {
-        hotkey: 'alt+n',
+        hotkey: 'mod+n',
         callback: () => setIsFindOrCreateModalOpen((isOpen) => !isOpen),
       },
       {
@@ -48,6 +48,14 @@ const App = () => {
         hotkey: 'mod+shift+f',
         callback: () => setSidebarTab(SidebarTab.Search),
       },
+      {
+        hotkey: 'mod+shift+h',
+        callback: () => setSidebarTab(SidebarTab.Hashtag),
+      },
+      {
+        hotkey: 'mod+shift+p',
+        callback: () => setSidebarTab(SidebarTab.Playlist),
+      },
     ],
     [setIsFindOrCreateModalOpen, setIsSidebarOpen, setSidebarTab]
   );
@@ -56,24 +64,13 @@ const App = () => {
   useEffect(() => {
     const closeSplash = () => { invoke('close_splashscreen'); };
     document.addEventListener('DOMContentLoaded', closeSplash);
-
-    // TODO: Customize contextmenu  
-    // document.addEventListener(
-    //   "contextmenu",
-    //   function (event) {
-    //     console.log("contex menu", event)
-    //     event.preventDefault();
-    //     return false;
-    //   },
-    //   { capture: true }
-    // );
   
     return () => {
       document.removeEventListener('DOMContentLoaded', closeSplash, true);
     };
   }, []);
 
-  const appContainerClassName = classNames('h-screen', { dark: darkMode });
+  const appContainerClassName = `h-screen flex flex-col ${darkMode ? 'dark' : ''}`;
 
   return (
     <ProvideCurrentView>
@@ -81,7 +78,8 @@ const App = () => {
         <div className="flex w-full h-full dark:bg-gray-900">
           <SideMenu />
           <Sidebar />
-          <div className="relative flex flex-col flex-1 overflow-y-auto">
+          <div className="relative flex-1 flex flex-col overflow-y-auto">
+            <div className="flex items-center justify-center"><StatusBar /></div>
             <MainView />
           </div>
           {isFindOrCreateModalOpen ? (

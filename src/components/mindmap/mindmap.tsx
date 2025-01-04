@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { parse, transform, markmap } from 'mdsmap';
 import { writeFile } from 'file/write';
 import { normalizeSlash } from 'file/util';
 import { saveDilog } from 'file/open';
-import markmap  from './view';
-import { parse, transform } from './parser';
 import './mindmap.css';
 
 type Props = {
@@ -24,13 +23,13 @@ export function Mindmap(props: Props) {
       return;
     }
 
-    const data = transform(parse(mdValue, {}));
+    const data = transform(parse(mdValue, {}), title);
     const svg: SVGAElement = markmap(svgRef.current, data, {
       preset: 'colorful', // or default
       linkShape: 'diagonal' // or bracket
     });
     setSvgElement(svg);
-  }, [mdValue]);
+  }, [mdValue, title]);
 
   useEffect(() => {
     if (!svgRef.current) { return; }

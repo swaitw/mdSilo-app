@@ -4,9 +4,10 @@ import { persist, StateStorage } from 'zustand/middleware';
 import produce, { Draft } from 'immer';
 import type { Note } from 'types/model';
 import type { PickPartial } from 'types/utils';
+import { ArticleType, PodType } from 'types/model';
 import type { ActivityRecord } from 'components/view/HeatMap';
 import * as Storage from 'file/storage';
-import userSettingsSlice, { UserSettings } from './userSettingsSlice';
+import userSettingsSlice, { UserSettings } from './userSettings';
 
 export { default as shallowEqual } from 'zustand/shallow';
 
@@ -41,7 +42,7 @@ export type NoteTreeItem = {
   title: string;
   created_at: string;
   updated_at: string; 
-  isDir: boolean;
+  is_dir: boolean;
   children: NoteTreeItem[]; // to del
   collapsed: boolean;       // to del
 };
@@ -59,6 +60,8 @@ export type NotesData = {
 export enum SidebarTab {
   Silo,
   Search,
+  Hashtag,
+  Playlist,
 }
 
 export type Store = {
@@ -82,6 +85,8 @@ export type Store = {
   setSidebarTab: Setter<SidebarTab>;
   sidebarSearchQuery: string;
   setSidebarSearchQuery: Setter<string>;
+  sidebarSearchType: string; // content or hashtag
+  setSidebarSearchType: Setter<string>;
   initDir: string | undefined;  // first open dir path
   setInitDir: Setter<string | undefined>;
   isLoading: boolean;  // is loading all?
@@ -90,6 +95,15 @@ export type Store = {
   setIsLoaded: Setter<boolean>;
   currentDir: string | undefined;  // dir path
   setCurrentDir: Setter<string | undefined>;
+  currentBoard: string;  // kanban's name
+  setCurrentBoard: Setter<string>;
+  currentCard: string | number | undefined;  // kanban card
+  setCurrentCard: Setter<string | number | undefined>;
+  // input end
+  currentArticle: ArticleType | null;   // feed article
+  setCurrentArticle: Setter<ArticleType | null>;
+  currentPod: PodType | null; 
+  setCurrentPod: Setter<PodType | null>;
 } & UserSettings;
 
 type FunctionPropertyNames<T> = {
@@ -146,7 +160,7 @@ export const store = createVanilla<Store>(
             title: note.title,
             created_at: note.created_at,
             updated_at: note.updated_at,
-            isDir: note.is_dir ?? false,
+            is_dir: note.is_dir ?? false,
             children: [], 
             collapsed: true, 
           }));
@@ -196,6 +210,8 @@ export const store = createVanilla<Store>(
       // search note
       sidebarSearchQuery: '',
       setSidebarSearchQuery: setter(set, 'sidebarSearchQuery'),
+      sidebarSearchType: 'content',
+      setSidebarSearchType: setter(set, 'sidebarSearchType'),
       initDir: undefined,
       setInitDir: setter(set, 'initDir'),
       isLoading: false,
@@ -204,6 +220,15 @@ export const store = createVanilla<Store>(
       setIsLoaded: setter(set, 'isLoaded'),
       currentDir: undefined,
       setCurrentDir: setter(set, 'currentDir'),
+      currentBoard: 'default', 
+      setCurrentBoard: setter(set, 'currentBoard'),
+      currentCard: undefined,
+      setCurrentCard: setter(set, 'currentCard'),
+      // input end
+      currentArticle: null,
+      setCurrentArticle: setter(set, 'currentArticle'),
+      currentPod: null,
+      setCurrentPod: setter(set, 'currentPod'),
       ...userSettingsSlice(set),
     })),
     {
@@ -214,8 +239,13 @@ export const store = createVanilla<Store>(
         // user setting related
         userId: state.userId,
         darkMode: state.darkMode,
+        font: state.font,
+        fontSize: state.fontSize,
+        fontWt: state.fontWt,
+        lineHeight: state.lineHeight,
         isRTL: state.isRTL,
         isCheckSpellOn: state.isCheckSpellOn,
+        isOpenPreOn: state.isOpenPreOn,
         noteSort: state.noteSort,
         recentDir: state.recentDir,
         pinnedDir: state.pinnedDir,

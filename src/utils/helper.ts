@@ -19,12 +19,20 @@ export function strToDate(str: string) {
   return date;
 }
 
-export function dateCompare(d1: string, d2: string) {
+export function dateCompare(d1: string | Date, d2: string | Date) {
   return new Date(d1).getTime() - new Date(d2).getTime();
 }
 
-export function realDateCompare(d1: Date, d2: Date) {
-  return d1.getTime() - d2.getTime();
+export function fmtDatetime(date: string | number | Date) {
+  const dt = typeof date === "number" ? date * 1000 : date;
+  return new Date(dt).toLocaleString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function decodeHTMLEntity(text: string) {
@@ -48,7 +56,7 @@ export const isMobile = (breakpoint: number = SM_BREAKPOINT) => {
   return winWidth <= breakpoint && winWidth !== 0;
 };
 
-// str
+// string
 // 
 // case Insensitive
 export function ciStringCompare(str1: string, str2: string) {
@@ -80,13 +88,22 @@ export function shortenString(txt: string, centre: string, len = 128) {
   return txt.substring(start, end).replaceAll(centre, `==${centre}==`);
 }
 
-const ymdNums = (date: string) => {
-  const nums =  date.split('-').map(n => Number(n));
-  return nums;
-};
-export function dailyTitleEqual(str1: string, str2: string) {
-  if (!regDateStr.test(str1) || !regDateStr.test(str2)) return false;
-  return ymdNums(str1).join('') === ymdNums(str2).join('');
+export const countWords = (str: string) => {
+  // special characters such as middle-dot, etc.   
+  const str0 = str.replace(/[\u007F-\u00FE]/g, ' ');
+  // remove all not ASCII
+  // https://en.wikipedia.org/wiki/List_of_Unicode_characters
+  const str1 = str0.replace(/[^!-~\d\s]+/gi, ' ')
+  // remove characters, number
+  const str2 = str0.replace(/[!-~\d\s]+/gi, '')
+
+  const matches1 = str1.match(/[\u00FF-\uFFFF]|\S+/g);
+  const matches2 = str2.match(/[\u00FF-\uFFFF]|\S+/g);
+  const count1 = matches1 ? matches1.length : 0;
+  const count2 = matches2 ? matches2.length : 0;
+
+  const count = count1 + count2;
+  return count;
 }
 
 // url 
@@ -103,14 +120,33 @@ export const isUrl = (str: string) => {
   return url.protocol === 'http:' || url.protocol === 'https:';
 };
 
-export const queryParamToArray = (
-  queryParam: string | string[] | undefined
-) => {
-  if (!queryParam) {
-    return [];
-  } else if (typeof queryParam === 'string') {
-    return [queryParam];
-  } else {
-    return queryParam;
-  }
+export const isSVG = (s: string) => /<\s*svg[^>]*>(.*?)<\/\s*svg>/g.test(s);
+
+export const getFavicon = (url: string) => {
+  const hostname = url ? new URL(url).hostname : "";
+  return "https://icons.duckduckgo.com/ip3/" + hostname + ".ico";
 };
+
+// generate id 
+const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+export function genId(num = true) {
+  if (num) {
+    return Date.now();
+  }
+
+  let id = "";
+  for (let i = 0; i < 8; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+
+  return id;
+}
+
+// bridge from frontend(emit) to injected script(listen on)
+export const emitCustomEvent = (ev: string, id: string) => {
+  const evt = new CustomEvent(ev, {
+    bubbles: true,
+    detail: { id },
+  });
+  document.dispatchEvent(evt);
+}

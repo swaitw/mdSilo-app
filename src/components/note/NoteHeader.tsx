@@ -1,8 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { Menu } from '@headlessui/react';
-import { IconDots, IconFileText, IconLayout, IconMarkdown, IconTournament, IconTrash } from '@tabler/icons';
+import { 
+  IconDots, IconFile, IconFileText, IconMarkdown, 
+  IconPhoto, IconTournament, IconTrash 
+} from '@tabler/icons-react';
 import { usePopper } from 'react-popper';
 import { useCurrentMdContext } from 'context/useCurrentMd';
+import { ExportAs } from 'editor/hooks/useExport';
 import { useStore } from 'lib/store';
 import { openFilePath } from 'file/open';
 import Tooltip from 'components/misc/Tooltip';
@@ -11,8 +15,9 @@ import { DropdownItem } from 'components/misc/Dropdown';
 import NoteMetadata from 'components/note/NoteMetadata';
 import NoteDelModal from 'components/note/NoteDelModal';
 
-
-export default function NoteHeader() {
+export default function NoteHeader(
+  {setShowBacklink} : {setShowBacklink : (show: boolean) => void}
+) {
   const currentNote = useCurrentMdContext();
   const note = useStore((state) => state.notes[currentNote.id]);
 
@@ -32,8 +37,9 @@ export default function NoteHeader() {
     async (mode: string) => {
       await openFilePath(note.id, true);
       setRawMode(mode);
+      setShowBacklink(false);
     }, 
-    [note, setRawMode]
+    [note.id, setRawMode, setShowBacklink]
   );
 
   const [isNoteDelModalOpen, setIsNoteDelModalOpen] = useState(false);
@@ -46,12 +52,7 @@ export default function NoteHeader() {
 
   return (
     <div className={`flex items-center justify-between w-full px-2 py-1 mb-2 text-right`}>
-      <div className="flex items-center">
-        <Tooltip content="Split View(beta)">
-          <button className={switchClass} onClick={() => setRaw('split')}>
-            <IconLayout className={`${rawMode === 'split' ? 'text-green-500' :iconClass}`} />
-          </button>
-        </Tooltip>
+      <div className="flex items-center" id="note-header-btns">
         <Tooltip content="WYSIWYG">
           <button className={switchClass} onClick={() => setRaw('wysiwyg')}>
             <IconFileText className={`${rawMode === 'wysiwyg' ? 'text-green-500' :iconClass}`} />
@@ -62,7 +63,7 @@ export default function NoteHeader() {
             <IconMarkdown className={`${rawMode === 'raw' ? 'text-green-500' : iconClass}`} />
           </button>
         </Tooltip>
-        <Tooltip content="Mindmap">
+        <Tooltip content="MindMap">
           <button className={switchClass} onClick={() => setRaw('mindmap')}>
             <IconTournament className={`rotate-180 ${rawMode === 'mindmap' ? 'text-green-500' : iconClass}`} />
           </button>
@@ -73,7 +74,7 @@ export default function NoteHeader() {
           {({ open }) => (
             <>
               <Menu.Button ref={menuButtonRef} className={buttonClassName}>
-                <Tooltip content="Options (Move, Delete...)">
+                <Tooltip content="Options (Delete...)">
                   <span className="flex items-center justify-center w-8 h-8">
                     <IconDots size={18} className={iconClass} />
                   </span>
@@ -94,6 +95,20 @@ export default function NoteHeader() {
                     >
                       <IconTrash className="mr-1" />
                       <span>Delete Permanently</span>
+                    </DropdownItem>
+                    <DropdownItem
+                      onClick={() => ExportAs('pdf', `${note.id}.pdf`)}
+                      className="border-t dark:border-gray-700"
+                    >
+                      <IconFile className="mr-1" />
+                      <span>Export PDF</span>
+                    </DropdownItem>
+                    <DropdownItem
+                      onClick={() => ExportAs('png', `${note.id}.png`)}
+                      className="border-t dark:border-gray-700"
+                    >
+                      <IconPhoto className="mr-1" />
+                      <span>Export PNG</span>
                     </DropdownItem>
                     <NoteMetadata noteId={note.id} />
                   </Menu.Items>

@@ -1,4 +1,4 @@
-import { IconPencil } from '@tabler/icons';
+import { IconPencil } from '@tabler/icons-react';
 import { parser, serializer } from "mdsmirror";
 import { useCurrentViewContext, DispatchType } from 'context/useCurrentView';
 import { Note } from 'types/model';
@@ -34,7 +34,7 @@ export default function NoteSumList(props: Props) {
           ) : null}
         </div>
       ),
-      children: notes.filter(n => !n.is_dir).map(noteToTreeData(dispatch)),
+      children: notes.map(noteToTreeData(dispatch)),
     }
   ];
 

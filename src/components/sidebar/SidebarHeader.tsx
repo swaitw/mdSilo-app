@@ -1,7 +1,9 @@
+import { invoke } from '@tauri-apps/api';
 import { Menu } from '@headlessui/react';
 import { 
-  IconChevronsDown, IconChevronLeft, IconSettings, IconBrowser, IconPizza, IconInfoCircle 
-} from '@tabler/icons';
+  IconChevronsDown, IconChevronLeft, IconSettings, IconBrowser, 
+  IconPizza, IconInfoCircle, IconCurrentLocation 
+} from '@tabler/icons-react';
 import { useStore } from 'lib/store';
 import Tooltip from 'components/misc/Tooltip';
 import { DropdownItem } from 'components/misc/Dropdown';
@@ -56,14 +58,23 @@ export default function SidebarHeader() {
           <DropdownItem
             className="border-t dark:border-gray-700"
             as='link'
-            href='https://mdsilo.com/sponsors/'
+            href='https://mdsilo.com/helpus'
           >
             <IconPizza size={18} className="mr-1" />
-            <span>Sponsor</span>
+            <span>Help Us</span>
           </DropdownItem>
           <DropdownItem onClick={() => setIsAboutOpen(true)}>
             <IconInfoCircle size={18} className="mr-1" />
             <span>About</span>
+          </DropdownItem>
+          <DropdownItem
+            onClick={async () => {
+              const dir_path = await invoke("create_mdsilo_dir");
+              await invoke("open_url", {url: dir_path});
+            }}
+          >
+            <IconCurrentLocation size={18} className="mr-1" />
+            <span>Local mdsilo</span>
           </DropdownItem>
         </Menu.Items>
       </Menu>

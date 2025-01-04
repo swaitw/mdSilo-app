@@ -57,12 +57,12 @@ const getTreeData = (
   return [
     {
       id: 'linked-backlinks',
-      labelNode: (<BacklinkBranch title={`${numOfLinkedMatches} Direct Mentions`}/>),
+      labelNode: (<BacklinkBranch title={`${numOfLinkedMatches} BackLinks`}/>),
       children: linkedBacklinks.map(backlinkToTreeData(true)),
     },
     {
       id: 'unlinked-backlinks',
-      labelNode: (<BacklinkBranch title={`${numOfUnlinkedMatches} Indirect Mentions`}/>),
+      labelNode: (<BacklinkBranch title={`${numOfUnlinkedMatches} Mentions`}/>),
       children: unlinkedBacklinks.map(backlinkToTreeData(false)),
     },
   ];
@@ -93,7 +93,7 @@ const backlinkToTreeData = (isLinked: boolean) => (backlink: Backlink) => {
         <BacklinkMatchLeaf
           noteId={backlink.id}
           match={match}
-          className="text-gray-600 bg-gray-50 dark:text-gray-100 dark:bg-gray-800"
+          className="text-gray-600 dark:text-gray-100 bg-white dark:bg-black"
         />
       ),
       showArrow: false,

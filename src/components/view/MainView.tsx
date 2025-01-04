@@ -4,8 +4,11 @@ import { useCurrentViewContext } from 'context/useCurrentView';
 import Chronicle from './chronicle';
 import Journals from './journals';
 import Tasks from './tasks';
+import Kanban from './kanban';
 import Graph from './graph';
 import NotePage from './md';
+import HashTags from "./hashtags";
+import Feed from "./feed";
 
 export default function MainView() {
   const currentView = useCurrentViewContext();
@@ -15,14 +18,20 @@ export default function MainView() {
     <>
       {viewTy === 'default' ? ( 
         <DefaultView /> 
+      ) : viewTy === 'feed' ? (
+        <Feed />
       ) : viewTy === 'chronicle' ? (
         <Chronicle />
       ) : viewTy === 'task' ? (
         <Tasks />
+      ) : viewTy === 'kanban' ? (
+        <Kanban />
       ) : viewTy === 'graph' ? (
         <Graph />
       ) : viewTy === 'journal' ? (
         <Journals />
+      ) : viewTy === 'tag' ? (
+        <HashTags />
       ) : (
         <NotePage />
       )}
@@ -37,29 +46,22 @@ function DefaultView() {
         <p className="text-2xl py-3 text-center text-primary-500">
           Hello, welcome to mdSilo Desktop.
         </p>
-        <MsEditor 
-          dark={false} 
-          value={defaultValue} 
-          onClickHashtag={(text) => { console.info("Click Hahtag: ", text);}}
-          disables={['sub']}
-        />
+        <MsEditor value={defaultValue} dark={false} />
       </div>
     </ErrorBoundary>
   );
 }
 
 const defaultValue = `
-Lightweight **knowledge silo** and networked-writing tool equipped with ==WYSIWYG Markdown editor and reader==. Use it to organize writing, network thoughts and build a Second Brain on top of local plain text Markdown files.
+A lightweight, local-first personal Wiki and knowledge base for storing ideas, thought, knowledge with the powerful all-in-one reading/writing tool. Use it to organize writing, network thoughts and build a Second Brain on top of local plain text Markdown files.
 
-:::info
-This is an editable demo.
-:::
-
-## Features
-  - 📝 All-In-One Editor: Markdown and extensions, Diagram, MindMap...  
-  - 🔀 Seamlessly switch between multi-modes: WYSIWYG, Markdown and MindMap  
-  - 🗄️ Build personal wiki with bidirectional links 
-  - ⌨️ Slash commands, Hotkeys and Hovering toolbar...   
+## Features  
+  - ➰ I/O: Feed & Podcast client(Input) and Personal Wiki(Output); 
+  - 🔀 All-In-One Editor: Markdown, WYSIWYG, Mind Map...  
+  - 📝 Markdown and extensions: Math/Chemical Equation, Diagram, Hashtag...   
+  - 🗄️ Build personal wiki with bidirectional wiki links 
+  - ⌨️ Slash commands, Hotkeys and Hovering toolbar...  
+  - 📋 Kanban board to manage the process of knowledge growing   
   - 🕸️ Graph view to visualize the networked writing  
   - 📅 Chronicle view and Daily activities graph  
   - ✔️ Task view to track todo/doing/done  

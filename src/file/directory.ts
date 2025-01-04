@@ -2,6 +2,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/tauri'
 import { doDeleteNote } from 'editor/hooks/useDeleteNote';
 import { store } from 'lib/store';
+import { emitCustomEvent } from 'utils/helper';
 import { openFilePaths, openJSONFilePath } from './open';
 import { rmFileNameExt } from './process';
 import { isTauri, normalizeSlash, joinPath, getBaseName, joinPaths } from './util';
@@ -77,7 +78,7 @@ class DirectoryAPI {
    * Get files with simple metadata, w/o content
    * @returns {Promise<DirectoryData>}
   */
-   listDirectory(): Promise<SimpleFileMeta[]> {
+  listDirectory(): Promise<SimpleFileMeta[]> {
     return new Promise((resolve) => {
       if (isTauri) {
         invoke<SimpleFileMeta[]>(
@@ -134,7 +135,9 @@ class DirectoryAPI {
   }
 
   /**
-   * Listen to changes in a directory
+   * Listen to changes event in a directory emited from backend
+   * backend -1: src-tauir/src/files.rs/listen_dir 
+   * backend -2: src-tauir/src/json.rs/write_json 
    * @param {() => void} callbackFn - callback
    * @returns {any}
    */
@@ -156,11 +159,8 @@ class DirectoryAPI {
           const currentNoteId = store.getState().currentNoteId;
           // console.log("write: ", event, filePaths, currentNoteId)
           // any change on current note will not be loaded 
-          for (const filePath of filePaths) {
-            if (filePath !== currentNoteId) {
-              await openFilePaths([filePath]);
-            }
-          }
+          const wrotePaths = filePaths.filter(f => f !== currentNoteId);
+          if (wrotePaths.length > 0) await openFilePaths(wrotePaths);
         } else if (event === 'renameFrom') {
           // on Linux, del is renameFrom
           const currentNoteId = store.getState().currentNoteId;
@@ -187,9 +187,11 @@ class DirectoryAPI {
           // }
         } else if (event === 'create') {
           // console.log("create: ", filePaths)
+          // files and dir moved into a watch folder on Linux will now be reported as rename to events instead of create events
           // open, upsert 
           await openFilePaths(filePaths);
         } else if (event === 'remove') {
+          // on Linux, remove event is renameFrom
           for (const filePath of filePaths) {
             store.getState().deleteNote(filePath);
             // console.log("delete file", filePath, event);
@@ -209,6 +211,11 @@ class DirectoryAPI {
           }
         } else if (event === 'unloaded') {
           store.getState().setIsLoaded(false);
+        } else {
+          // CANNOT LISTEN on load
+          // console.log("custom event: ", filePaths, event);
+          // TODO: to handle some event 
+          emitCustomEvent(event, filePaths.pop() || "");
         }
         callbackFn();
       });
